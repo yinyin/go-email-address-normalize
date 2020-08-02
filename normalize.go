@@ -253,38 +253,25 @@ func (n *normalizeInstance) stateLocalPart(ch rune) (nextState normalizeStateCal
 	return nil
 }
 
-func (n *normalizeInstance) stateSimpleLocalPart(ch rune) (nextState normalizeStateCallable) {
-	switch ch {
-	case '@':
-		if n.lastCommitedCharacter == '.' {
-			n.needQuote = true
+func (n *normalizeInstance) isIPLiteralDomain() (bool, error) {
+	if (n.idnaDomain || n.dnHasOtherCharacters) && (!n.dnHasColon) {
+		return false, nil
 	}
-		return n.stateSimpleDomainPart
-	case '(':
-		return n.stateLocalPartComment
-	default:
-		n.commitToLocalPart(ch)
+	if n.dnHasDecimal && n.dnHasDot && (!n.dnHasHex) && (!n.dnHasColon) {
+		return true, nil
 	}
-	return nil
+	if (n.dnHasDecimal || n.dnHasHex) && n.dnHasColon && (!n.dnHasDot) {
+		return true, nil
 	}
-
-func (n *normalizeInstance) stateStart(ch rune) (nextState normalizeStateCallable) {
-	switch ch {
-	case '"':
-		return n.stateQuotedLocalPart
-	case '(':
-		return n.stateLocalPartComment
-	case '.':
-		n.needQuote = true
-		n.commitToLocalPart(ch)
-		return n.stateSimpleLocalPart
-	case '@':
-		n.needQuote = true
-		return n.stateSimpleDomainPart
-	default:
-		n.commitToLocalPart(ch)
-		return n.stateSimpleLocalPart
+	err := &ErrUnknownDomainCharacterCombination{
+		idnaDomain:           n.idnaDomain,
+		dnHasDecimal:         n.dnHasDecimal,
+		dnHasHex:             n.dnHasHex,
+		dnHasDot:             n.dnHasDot,
+		dnHasColon:           n.dnHasColon,
+		dnHasOtherCharacters: n.dnHasOtherCharacters,
 	}
+	return false, err
 }
 
 // NormalizeEmailAddress normalize given email adderss and return checked and normalized
@@ -296,6 +283,15 @@ func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEm
 	normalizeInst := newNormalizeInstance(emailAddress)
 	if err = normalizeInst.runNormalize(); nil != err {
 		return
+	}
+	if !opt.AllowIPLiteral {
+		var isIPLiteral bool
+		if isIPLiteral, err = normalizeInst.isIPLiteralDomain(); nil != err {
+			return
+		} else if isIPLiteral {
+			err = ErrGivenAddressTooShort
+			return
+		}
 	}
 	// TODO: check normalized result.
 	return
