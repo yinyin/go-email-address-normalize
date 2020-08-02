@@ -19,11 +19,127 @@ func isNeedQuote(ch rune) bool {
 
 type normalizeStateCallable func(ch rune) (nextState normalizeStateCallable)
 
+type normalizeLocalPartInstance struct {
+	localPart             []rune
+	lastCommitedCharacter rune
+
+	needQuote bool
+
+	stateCallable normalizeStateCallable
+	shouldStop    bool
+}
+
+// commitToLocalPart append given character `ch` into normalized local part.
+func (n *normalizeLocalPartInstance) commitToLocalPart(ch rune) {
+	if unicode.IsLetter(ch) || unicode.IsDigit(ch) {
+		ch = unicode.ToLower(ch)
+	} else if !unicode.IsPrint(ch) {
+		return // skip non-printables.
+	} else if unicode.IsSpace(ch) || isNeedQuote(ch) {
+		n.needQuote = true
+	} else if (ch == '.') && (n.lastCommitedCharacter == '.') {
+		n.needQuote = true
+	}
+	n.localPart = append(n.localPart, ch)
+	n.lastCommitedCharacter = ch
+}
+
+func (n *normalizeLocalPartInstance) stateQuotedLocalPartInEscape(ch rune) (nextState normalizeStateCallable) {
+	n.commitToLocalPart(ch)
+	return n.stateQuotedLocalPart
+}
+
+func (n *normalizeLocalPartInstance) stateQuotedLocalPart(ch rune) (nextState normalizeStateCallable) {
+	switch ch {
+	case '"':
+		return n.stateSimpleLocalPart
+	case '\\':
+		return n.stateQuotedLocalPartInEscape
+	default:
+		n.commitToLocalPart(ch)
+	}
+	return nil
+}
+
+func (n *normalizeLocalPartInstance) stateLocalPartCommentQuotedInEscape(ch rune) (nextState normalizeStateCallable) {
+	return n.stateLocalPartCommentQuotedText
+}
+
+func (n *normalizeLocalPartInstance) stateLocalPartCommentQuotedText(ch rune) (nextState normalizeStateCallable) {
+	switch ch {
+	case '"':
+		return n.stateLocalPartComment
+	case '\\':
+		return n.stateLocalPartCommentQuotedInEscape
+	}
+	return nil
+}
+
+func (n *normalizeLocalPartInstance) stateLocalPartComment(ch rune) (nextState normalizeStateCallable) {
+	switch ch {
+	case '"':
+		return n.stateLocalPartCommentQuotedText
+	case ')':
+		return n.stateSimpleLocalPart
+	}
+	return nil
+}
+
+func (n *normalizeLocalPartInstance) stateSimpleLocalPart(ch rune) (nextState normalizeStateCallable) {
+	switch ch {
+	case '@':
+		n.stopCheck()
+		n.shouldStop = true
+		return n.stateStart
+	case '(':
+		return n.stateLocalPartComment
+	default:
+		n.commitToLocalPart(ch)
+	}
+	return nil
+}
+
+func (n *normalizeLocalPartInstance) stateStart(ch rune) (nextState normalizeStateCallable) {
+	switch ch {
+	case '"':
+		return n.stateQuotedLocalPart
+	case '(':
+		return n.stateLocalPartComment
+	case '.':
+		n.needQuote = true
+		n.commitToLocalPart(ch)
+		return n.stateSimpleLocalPart
+	case '@':
+		n.needQuote = true
+		n.shouldStop = true
+		return n.stateStart
+	default:
+		n.commitToLocalPart(ch)
+		return n.stateSimpleLocalPart
+	}
+}
+
+func (n *normalizeLocalPartInstance) stopCheck() {
+	if n.lastCommitedCharacter == '.' {
+		n.needQuote = true
+	}
+}
+
+func (n *normalizeLocalPartInstance) putCharacter(ch rune) (shouldStop bool) {
+	if n.stateCallable == nil {
+		n.stateCallable = n.stateStart
+	}
+	if nextStateCallable := n.stateCallable(ch); nextStateCallable != nil {
+		n.stateCallable = nextStateCallable
+	}
+	return n.shouldStop
+}
+
 type normalizeInstance struct {
 	emailAddress []rune
 
-	localPart  []rune
-	domainPart []rune
+	localPartNormalizer normalizeLocalPartInstance
+	domainPart          []rune
 
 	lastCommitedCharacter rune
 
@@ -42,8 +158,10 @@ func newNormalizeInstance(emailAddress string) (instance *normalizeInstance) {
 	l := len(aux)
 	instance = &normalizeInstance{
 		emailAddress: aux,
-		localPart:    make([]rune, 0, l-1),
-		domainPart:   make([]rune, 0, l-1),
+		localPartNormalizer: normalizeLocalPartInstance{
+			localPart: make([]rune, 0, l-1),
+		},
+		domainPart: make([]rune, 0, l-1),
 	}
 	return
 }
@@ -54,7 +172,7 @@ func (n *normalizeInstance) runNormalize() (err error) {
 		err = ErrGivenAddressTooShort
 		return
 	}
-	stateCallable := n.stateStart
+	stateCallable := n.stateLocalPart
 	for _, ch := range n.emailAddress {
 		if nextStateCallable := stateCallable(ch); nil != nextStateCallable {
 			stateCallable = nextStateCallable
@@ -106,27 +224,6 @@ func (n *normalizeInstance) commitToDomainPart(ch rune) {
 	n.lastCommitedCharacter = ch
 }
 
-// commitToLocalPart append given character `ch` into normalized local part.
-func (n *normalizeInstance) commitToLocalPart(ch rune) {
-	if unicode.IsLetter(ch) || unicode.IsDigit(ch) {
-		ch = unicode.ToLower(ch)
-	} else if !unicode.IsPrint(ch) {
-		return // skip non-printables.
-	} else if unicode.IsSpace(ch) || isNeedQuote(ch) {
-		n.needQuote = true
-	} else if (ch == '.') && (n.lastCommitedCharacter == '.') {
-		n.needQuote = true
-	}
-	if (ch | 0xF) == 0x2F {
-		offsetIdx := ch & 0xF
-		if 0 == n.subaddressOffsets[offsetIdx] {
-			n.subaddressOffsets[offsetIdx] = len(n.localPart)
-		}
-	}
-	n.localPart = append(n.localPart, ch)
-	n.lastCommitedCharacter = ch
-}
-
 func (n *normalizeInstance) stateIPLiteralDomainPart(ch rune) (nextState normalizeStateCallable) {
 	if ch == ']' {
 		return n.stateSimpleDomainPart
@@ -143,43 +240,15 @@ func (n *normalizeInstance) stateSimpleDomainPart(ch rune) (nextState normalizeS
 	return nil
 }
 
-func (n *normalizeInstance) stateQuotedLocalPartInEscape(ch rune) (nextState normalizeStateCallable) {
-	n.commitToLocalPart(ch)
-	return n.stateQuotedLocalPart
-}
-
-func (n *normalizeInstance) stateQuotedLocalPart(ch rune) (nextState normalizeStateCallable) {
-	switch ch {
-	case '"':
-		return n.stateSimpleLocalPart
-	case '\\':
-		return n.stateQuotedLocalPartInEscape
-	default:
-		n.commitToLocalPart(ch)
+func (n *normalizeInstance) stateLocalPart(ch rune) (nextState normalizeStateCallable) {
+	if (ch | 0xF) == 0x2F {
+		offsetIdx := ch & 0xF
+		if 0 == n.subaddressOffsets[offsetIdx] {
+			n.subaddressOffsets[offsetIdx] = len(n.localPartNormalizer.localPart)
+		}
 	}
-	return nil
-}
-
-func (n *normalizeInstance) stateLocalPartCommentQuotedInEscape(ch rune) (nextState normalizeStateCallable) {
-	return n.stateLocalPartCommentQuotedText
-}
-
-func (n *normalizeInstance) stateLocalPartCommentQuotedText(ch rune) (nextState normalizeStateCallable) {
-	switch ch {
-	case '"':
-		return n.stateLocalPartComment
-	case '\\':
-		return n.stateLocalPartCommentQuotedInEscape
-	}
-	return nil
-}
-
-func (n *normalizeInstance) stateLocalPartComment(ch rune) (nextState normalizeStateCallable) {
-	switch ch {
-	case '"':
-		return n.stateLocalPartCommentQuotedText
-	case ')':
-		return n.stateSimpleLocalPart
+	if shouldStop := n.localPartNormalizer.putCharacter(ch); shouldStop {
+		return n.stateSimpleDomainPart
 	}
 	return nil
 }
@@ -189,7 +258,7 @@ func (n *normalizeInstance) stateSimpleLocalPart(ch rune) (nextState normalizeSt
 	case '@':
 		if n.lastCommitedCharacter == '.' {
 			n.needQuote = true
-		}
+	}
 		return n.stateSimpleDomainPart
 	case '(':
 		return n.stateLocalPartComment
@@ -197,7 +266,7 @@ func (n *normalizeInstance) stateSimpleLocalPart(ch rune) (nextState normalizeSt
 		n.commitToLocalPart(ch)
 	}
 	return nil
-}
+	}
 
 func (n *normalizeInstance) stateStart(ch rune) (nextState normalizeStateCallable) {
 	switch ch {
