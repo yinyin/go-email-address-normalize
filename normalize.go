@@ -289,9 +289,13 @@ func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEm
 		if isIPLiteral, err = normalizeInst.isIPLiteralDomain(); nil != err {
 			return
 		} else if isIPLiteral {
-			err = ErrGivenAddressTooShort
+			err = ErrGivenAddressHasIPLiteral
 			return
 		}
+	}
+	if (!opt.AllowQuotedLocalPart) && normalizeInst.needQuote {
+		err = ErrGivenAddressNeedQuote
+		return
 	}
 	// TODO: check normalized result.
 	return
