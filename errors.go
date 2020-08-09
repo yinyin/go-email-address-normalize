@@ -8,7 +8,8 @@ import (
 var ErrGivenAddressTooShort = errors.New("given email address is too short")
 
 // ErrGivenAddressHasIPLiteral indicate given email address has IP literal as domain part.
-var ErrGivenAddressHasIPLiteral = errors.New(("given email address has IP literal as domain part"))
+var ErrGivenAddressHasIPLiteral = errors.New("given email address has IP literal as domain part")
+
 
 // ErrUnknownDomainCharacterCombination indicate unknown mix of characters in domain part.
 type ErrUnknownDomainCharacterCombination struct {
