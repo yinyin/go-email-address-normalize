@@ -13,6 +13,12 @@ var ErrGivenAddressHasIPLiteral = errors.New("given email address has IP literal
 // ErrGivenAddressNeedQuote indicate given email address needs quote.
 var ErrGivenAddressNeedQuote = errors.New("given email address have to be quoted")
 
+// ErrGivenAddressContainSpecialCharacter indicate given email address contain special characters may harmful to MTA.
+var ErrGivenAddressContainSpecialCharacter = errors.New("given email address have special character")
+
+// ErrGivenAddressLocalPartContainI18NCharacter indicate local part of given email address contain international character.
+var ErrGivenAddressLocalPartContainI18NCharacter = errors.New("local part o given email address have i18n character")
+
 // ErrUnknownDomainCharacterCombination indicate unknown mix of characters in domain part.
 type ErrUnknownDomainCharacterCombination struct {
 	idnaDomain           bool

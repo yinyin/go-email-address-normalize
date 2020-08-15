@@ -7,9 +7,19 @@ import (
 const domainLengthLimit = 255
 
 var charactersNeedQuote = ([]rune)("\"(),:;<>@[\\]")
+var charactersNotVerySafe = ([]rune)("%|!#$*/\\")
 
 func isNeedQuote(ch rune) bool {
 	for _, c := range charactersNeedQuote {
+		if c == ch {
+			return true
+		}
+	}
+	return false
+}
+
+func isNotVerySafeCharacter(ch rune) bool {
+	for _, c := range charactersNotVerySafe {
 		if c == ch {
 			return true
 		}
@@ -27,6 +37,9 @@ type normalizeLocalPartInstance struct {
 
 	stateCallable normalizeStateCallable
 	shouldStop    bool
+
+	hasUnsafeCharacter   bool
+	hasNonASCIICharacter bool
 }
 
 // commitToLocalPart append given character `ch` into normalized local part.
@@ -39,6 +52,11 @@ func (n *normalizeLocalPartInstance) commitToLocalPart(ch rune) {
 		n.needQuote = true
 	} else if (ch == '.') && (n.lastCommitedCharacter == '.') {
 		n.needQuote = true
+	} else if isNotVerySafeCharacter(ch) {
+		n.hasUnsafeCharacter = true
+	}
+	if ch > unicode.MaxASCII {
+		n.hasNonASCIICharacter = true
 	}
 	n.localPart = append(n.localPart, ch)
 	n.lastCommitedCharacter = ch
@@ -293,8 +311,16 @@ func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEm
 			return
 		}
 	}
-	if (!opt.AllowQuotedLocalPart) && normalizeInst.needQuote {
+	if (!opt.AllowQuotedLocalPart) && normalizeInst.localPartNormalizer.needQuote {
 		err = ErrGivenAddressNeedQuote
+		return
+	}
+	if (!opt.AllowLocalPartSpecialChars) && normalizeInst.localPartNormalizer.hasUnsafeCharacter {
+		err = ErrGivenAddressContainSpecialCharacter
+		return
+	}
+	if (!opt.AllowLocalPartInternationalChars) && normalizeInst.localPartNormalizer.hasNonASCIICharacter {
+		err = ErrGivenAddressLocalPartContainI18NCharacter
 		return
 	}
 	// TODO: check normalized result.
