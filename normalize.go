@@ -186,7 +186,6 @@ type normalizeInstance struct {
 
 	lastCommitedCharacter rune
 
-	needQuote            bool
 	subaddressOffsets    [16]int
 	idnaDomain           bool
 	dnHasDecimal         bool
@@ -317,6 +316,31 @@ func (n *normalizeInstance) isIPLiteralDomain() (bool, error) {
 	return false, err
 }
 
+func (n *normalizeInstance) check(opt *NormalizeOption) (err error) {
+	if !opt.AllowIPLiteral {
+		var isIPLiteral bool
+		if isIPLiteral, err = n.isIPLiteralDomain(); nil != err {
+			return
+		} else if isIPLiteral {
+			err = ErrGivenAddressHasIPLiteral
+			return
+		}
+	}
+	if (!opt.AllowQuotedLocalPart) && n.localPartNormalizer.needQuote {
+		err = ErrGivenAddressNeedQuote
+		return
+	}
+	if (!opt.AllowLocalPartSpecialChars) && n.localPartNormalizer.hasUnsafeCharacter {
+		err = ErrGivenAddressContainSpecialCharacter
+		return
+	}
+	if (!opt.AllowLocalPartInternationalChars) && n.localPartNormalizer.hasNonASCIICharacter {
+		err = ErrGivenAddressLocalPartContainI18NCharacter
+		return
+	}
+	return
+}
+
 func (n *normalizeInstance) normalizeLocalPart(opt *NormalizeOption) (resultLocalPart string) {
 	buf := n.localPartNormalizer.localPart
 	if opt.RemoveSubAddressingWith != nil {
@@ -364,25 +388,7 @@ func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEm
 	if err = normalizeInst.runNormalize(); nil != err {
 		return
 	}
-	if !opt.AllowIPLiteral {
-		var isIPLiteral bool
-		if isIPLiteral, err = normalizeInst.isIPLiteralDomain(); nil != err {
-			return
-		} else if isIPLiteral {
-			err = ErrGivenAddressHasIPLiteral
-			return
-		}
-	}
-	if (!opt.AllowQuotedLocalPart) && normalizeInst.localPartNormalizer.needQuote {
-		err = ErrGivenAddressNeedQuote
-		return
-	}
-	if (!opt.AllowLocalPartSpecialChars) && normalizeInst.localPartNormalizer.hasUnsafeCharacter {
-		err = ErrGivenAddressContainSpecialCharacter
-		return
-	}
-	if (!opt.AllowLocalPartInternationalChars) && normalizeInst.localPartNormalizer.hasNonASCIICharacter {
-		err = ErrGivenAddressLocalPartContainI18NCharacter
+	if err = normalizeInst.check(opt); nil != err {
 		return
 	}
 	checkedLocalPart := normalizeInst.localPartNormalizer.resultLocalPart()
