@@ -338,6 +338,14 @@ func (n *normalizeInstance) check(opt *NormalizeOption) (err error) {
 		err = ErrGivenAddressLocalPartContainI18NCharacter
 		return
 	}
+	if len(n.domainPart) == 0 {
+		err = ErrEmptyDomainAfterCheck
+		return
+	}
+	if len(n.localPartNormalizer.localPart) == 0 {
+		err = ErrEmptyLocalPartAfterCheck
+		return
+	}
 	return
 }
 
@@ -393,6 +401,10 @@ func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEm
 	}
 	checkedLocalPart := normalizeInst.localPartNormalizer.resultLocalPart()
 	normalizedLocalPart := normalizeInst.normalizeLocalPart(opt)
+	if len(normalizedLocalPart) == 0 {
+		err = ErrEmptyLocalPartAfterNormalize
+		return
+	}
 	domainPart := string(normalizeInst.domainPart)
 	checkedEmailAddress = checkedLocalPart + "@" + domainPart
 	normalizedEmailAddress = normalizedLocalPart + "@" + domainPart

@@ -17,7 +17,16 @@ var ErrGivenAddressNeedQuote = errors.New("given email address have to be quoted
 var ErrGivenAddressContainSpecialCharacter = errors.New("given email address have special character")
 
 // ErrGivenAddressLocalPartContainI18NCharacter indicate local part of given email address contain international character.
-var ErrGivenAddressLocalPartContainI18NCharacter = errors.New("local part o given email address have i18n character")
+var ErrGivenAddressLocalPartContainI18NCharacter = errors.New("local part of given email address have i18n character")
+
+// ErrEmptyDomainAfterCheck indicate domain part of given address become empty after check process.
+var ErrEmptyDomainAfterCheck = errors.New("domain part become empty")
+
+// ErrEmptyLocalPartAfterCheck indicate local part of given address become empty after check process.
+var ErrEmptyLocalPartAfterCheck = errors.New("local part become empty after check")
+
+// ErrEmptyLocalPartAfterNormalize indicate local part of given address become empty after normalize process.
+var ErrEmptyLocalPartAfterNormalize = errors.New("domain part become empty after normalize")
 
 // ErrUnknownDomainCharacterCombination indicate unknown mix of characters in domain part.
 type ErrUnknownDomainCharacterCombination struct {
