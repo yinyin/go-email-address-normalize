@@ -27,6 +27,15 @@ func isNotVerySafeCharacter(ch rune) bool {
 	return false
 }
 
+func runesIndexRune(s []rune, ch rune) int {
+	for idx, elem := range s {
+		if elem == ch {
+			return idx
+		}
+	}
+	return -1
+}
+
 type normalizeStateCallable func(ch rune) (nextState normalizeStateCallable)
 
 type normalizeLocalPartInstance struct {
@@ -151,6 +160,22 @@ func (n *normalizeLocalPartInstance) putCharacter(ch rune) (shouldStop bool) {
 		n.stateCallable = nextStateCallable
 	}
 	return n.shouldStop
+}
+
+func (n *normalizeLocalPartInstance) resultLocalPart() string {
+	if !n.needQuote {
+		return string(n.localPart)
+	}
+	buf := make([]rune, 0, len(n.localPart)+2)
+	buf = append(buf, '"')
+	for _, ch := range n.localPart {
+		if ch == '\\' || ch == '"' {
+			buf = append(buf, '\\')
+		}
+		buf = append(buf, ch)
+	}
+	buf = append(buf, '"')
+	return string(buf)
 }
 
 type normalizeInstance struct {
@@ -292,6 +317,43 @@ func (n *normalizeInstance) isIPLiteralDomain() (bool, error) {
 	return false, err
 }
 
+func (n *normalizeInstance) normalizeLocalPart(opt *NormalizeOption) (resultLocalPart string) {
+	buf := n.localPartNormalizer.localPart
+	if opt.RemoveSubAddressingWith != nil {
+		subAddrChars := opt.RemoveSubAddressingWith(string(n.domainPart))
+		for _, ch := range subAddrChars {
+			if (ch | 0xF) == 0x2F {
+				offsetIdx := ch & 0xF
+				if ofst := n.subaddressOffsets[offsetIdx]; (ofst > 0) && (ofst < len(buf)) {
+					buf = buf[:ofst]
+				}
+			} else if ofst := runesIndexRune(buf, ch); ofst >= 0 {
+				buf = buf[:ofst]
+			}
+
+		}
+	}
+	if len(buf) == 0 {
+		return
+	}
+	if opt.RemoveLocalPartDots {
+		n2 := normalizeLocalPartInstance{
+			localPart: make([]rune, 0, len(buf)),
+		}
+		for _, ch := range buf {
+			if ch == '.' {
+				continue
+			}
+			n2.putCharacter(ch)
+		}
+		n2.stopCheck()
+		resultLocalPart = n2.resultLocalPart()
+	} else {
+		resultLocalPart = string(buf)
+	}
+	return
+}
+
 // NormalizeEmailAddress normalize given email adderss and return checked and normalized
 // email addresses.
 func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEmailAddress, normalizedEmailAddress string, err error) {
@@ -323,6 +385,10 @@ func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEm
 		err = ErrGivenAddressLocalPartContainI18NCharacter
 		return
 	}
-	// TODO: check normalized result.
+	checkedLocalPart := normalizeInst.localPartNormalizer.resultLocalPart()
+	normalizedLocalPart := normalizeInst.normalizeLocalPart(opt)
+	domainPart := string(normalizeInst.domainPart)
+	checkedEmailAddress = checkedLocalPart + "@" + domainPart
+	normalizedEmailAddress = normalizedLocalPart + "@" + domainPart
 	return
 }
