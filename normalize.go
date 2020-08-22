@@ -146,12 +146,14 @@ func (n *normalizeLocalPartInstance) stateStart(ch rune) (nextState normalizeSta
 	}
 }
 
+// stopCheck perform check for stopping normalize process.
 func (n *normalizeLocalPartInstance) stopCheck() {
 	if n.lastCommitedCharacter == '.' {
 		n.needQuote = true
 	}
 }
 
+// putCharacter push given character `ch` into this instance.
 func (n *normalizeLocalPartInstance) putCharacter(ch rune) (shouldStop bool) {
 	if n.stateCallable == nil {
 		n.stateCallable = n.stateStart
@@ -162,6 +164,7 @@ func (n *normalizeLocalPartInstance) putCharacter(ch rune) (shouldStop bool) {
 	return n.shouldStop
 }
 
+// resultLocalPart return normalized local part.
 func (n *normalizeLocalPartInstance) resultLocalPart() string {
 	if !n.needQuote {
 		return string(n.localPart)
@@ -380,8 +383,19 @@ func (n *normalizeInstance) normalizeLocalPart(opt *NormalizeOption) (resultLoca
 		}
 		n2.stopCheck()
 		resultLocalPart = n2.resultLocalPart()
+	} else if len(n.localPartNormalizer.localPart) == len(buf) {
+		// CAUTION: rework if having content rewrite in logic above.
+		// (make `buf` and `n.localPartNormalizer.localPart` have same size but different content)
+		resultLocalPart = n.localPartNormalizer.resultLocalPart()
 	} else {
-		resultLocalPart = string(buf)
+		n2 := normalizeLocalPartInstance{
+			localPart: make([]rune, 0, len(buf)),
+		}
+		for _, ch := range buf {
+			n2.putCharacter(ch)
+		}
+		n2.stopCheck()
+		resultLocalPart = n2.resultLocalPart()
 	}
 	return
 }
