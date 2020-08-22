@@ -196,6 +196,8 @@ type normalizeInstance struct {
 	dnHasDot             bool
 	dnHasColon           bool
 	dnHasOtherCharacters bool
+
+	checkedIsIPLiteralPositive bool
 }
 
 func newNormalizeInstance(emailAddress string) (instance *normalizeInstance) {
@@ -328,6 +330,8 @@ func (n *normalizeInstance) check(opt *NormalizeOption) (err error) {
 			err = ErrGivenAddressHasIPLiteral
 			return
 		}
+	} else if isIPLiteral, _ := n.isIPLiteralDomain(); isIPLiteral {
+		n.checkedIsIPLiteralPositive = true
 	}
 	if (!opt.AllowQuotedLocalPart) && n.localPartNormalizer.needQuote {
 		err = ErrGivenAddressNeedQuote
@@ -400,6 +404,16 @@ func (n *normalizeInstance) normalizeLocalPart(opt *NormalizeOption) (resultLoca
 	return
 }
 
+// resultDomainPart return checked domain part.
+// CAUTION: **Must** invoke after `check()` method.
+func (n *normalizeInstance) resultDomainPart() (domainPart string) {
+	domainPart = string(n.domainPart)
+	if n.checkedIsIPLiteralPositive {
+		domainPart = "[" + domainPart + "]"
+	}
+	return
+}
+
 // NormalizeEmailAddress normalize given email adderss and return checked and normalized
 // email addresses.
 func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEmailAddress, normalizedEmailAddress string, err error) {
@@ -419,7 +433,7 @@ func NormalizeEmailAddress(emailAddress string, opt *NormalizeOption) (checkedEm
 		err = ErrEmptyLocalPartAfterNormalize
 		return
 	}
-	domainPart := string(normalizeInst.domainPart)
+	domainPart := normalizeInst.resultDomainPart()
 	checkedEmailAddress = checkedLocalPart + "@" + domainPart
 	normalizedEmailAddress = normalizedLocalPart + "@" + domainPart
 	return
