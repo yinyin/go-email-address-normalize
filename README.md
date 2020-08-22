@@ -26,3 +26,4 @@ There are 3 values in result:
 ## Domain Part
 
 * Option to accept IP literals.
+    - Hybrid address (IPv4-mapped IPv6 address) is not accept.
